@@ -35,10 +35,10 @@ jobs:
       run: |
         mkdir build
         cd build
-        # -DCMAKE_OSX_ARCHITECTURES=arm64: Explicitly forces Mach-O arm64 output.
-        # -DCMAKE_BUILD_TYPE=Release: Enables standard compiler optimizations (-O3, NDEBUG).
-        # -DCMAKE_CXX_FLAGS: Applies specific micro-architecture tuning for the M1 chip series.
+        # -DCMAKE_POLICY_VERSION_MINIMUM=3.5: Bypasses the legacy CMake version error
+        # -DCMAKE_OSX_ARCHITECTURES=arm64: Explicitly forces Mach-O arm64 output
         cmake .. -G Ninja \
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_OSX_ARCHITECTURES="arm64" \
           -DCMAKE_CXX_FLAGS="-mcpu=apple-m1 -mtune=apple-m1" \
