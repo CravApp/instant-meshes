@@ -5,39 +5,41 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+  workflow_dispatch:
 
 jobs:
   build-arm64:
-    # macos-14 is GitHub's dedicated M1 Apple Silicon runner. 
-    # This guarantees the build executes natively on ARM hardware rather than an Intel emulator.
     runs-on: macos-14 
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        # Replicates the 'git submodule update --init --recursive' from the original Travis config
         submodules: recursive 
 
     - name: Install Build Tools
       run: |
-        # Ninja provides significantly faster, highly parallelized builds compared to standard Make
         brew install cmake ninja
 
-    - name: Execute Custom Dependency Scripts (If Required)
+    - name: Execute Custom Dependency Scripts
       run: |
-        # If your local build scripts are required to fetch Eigen3 into a specific directory 
-        # (as expected by CMakeLists.txt), run it here. Otherwise, this step can be removed.
-        bash scripts/build-eigen || echo "No custom dependency script needed or it failed safely."
+        bash scripts/build-eigen || echo "No custom dependency script needed"
+
+    - name: Patch legacy CMake policies in submodules
+      run: |
+        # macOS uses BSD sed, which requires the empty string '' after -i
+        # This replaces the forbidden OLD policy with the required NEW policy in the glfw submodule
+        sed -i '' 's/cmake_policy(SET CMP0042 OLD)/cmake_policy(SET CMP0042 NEW)/g' ext/nanogui/ext/glfw/CMakeLists.txt
+        
+        # Optional: Apply globally just in case other submodules have it
+        find . -name "CMakeLists.txt" -type f -exec sed -i '' 's/cmake_policy(SET CMP0042 OLD)/cmake_policy(SET CMP0042 NEW)/g' {} +
 
     - name: Configure CMake for Apple Silicon
       run: |
         mkdir build
         cd build
-        # -DCMAKE_POLICY_VERSION_MINIMUM=3.5: Bypasses the legacy CMake version error
-        # -DCMAKE_OSX_ARCHITECTURES=arm64: Explicitly forces Mach-O arm64 output
-        cmake .. -G Ninja \
+        # Added -Wno-dev to suppress CMP0175 and other developer warnings
+        cmake .. -G Ninja -Wno-dev \
           -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_OSX_ARCHITECTURES="arm64" \
@@ -51,8 +53,6 @@ jobs:
 
     - name: Package Artifact
       run: |
-        # Mimicking the packaging logic from the legacy .travis.yml
-        # We package the compiled .app bundle into a ZIP for distribution.
         mkdir -p artifact
         cd build
         zip -r ../artifact/instant-meshes-macos-arm64.zip "Instant Meshes.app" || zip -r ../artifact/instant-meshes-macos-arm64.zip *
