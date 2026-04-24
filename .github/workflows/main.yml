@@ -1,0 +1,65 @@
+name: Build macOS (Apple Silicon)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+
+jobs:
+  build-arm64:
+    # macos-14 is GitHub's dedicated M1 Apple Silicon runner. 
+    # This guarantees the build executes natively on ARM hardware rather than an Intel emulator.
+    runs-on: macos-14 
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # Replicates the 'git submodule update --init --recursive' from the original Travis config
+        submodules: recursive 
+
+    - name: Install Build Tools
+      run: |
+        # Ninja provides significantly faster, highly parallelized builds compared to standard Make
+        brew install cmake ninja
+
+    - name: Execute Custom Dependency Scripts (If Required)
+      run: |
+        # If your local build scripts are required to fetch Eigen3 into a specific directory 
+        # (as expected by CMakeLists.txt), run it here. Otherwise, this step can be removed.
+        bash scripts/build-eigen || echo "No custom dependency script needed or it failed safely."
+
+    - name: Configure CMake for Apple Silicon
+      run: |
+        mkdir build
+        cd build
+        # -DCMAKE_OSX_ARCHITECTURES=arm64: Explicitly forces Mach-O arm64 output.
+        # -DCMAKE_BUILD_TYPE=Release: Enables standard compiler optimizations (-O3, NDEBUG).
+        # -DCMAKE_CXX_FLAGS: Applies specific micro-architecture tuning for the M1 chip series.
+        cmake .. -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES="arm64" \
+          -DCMAKE_CXX_FLAGS="-mcpu=apple-m1 -mtune=apple-m1" \
+          -DCMAKE_C_FLAGS="-mcpu=apple-m1 -mtune=apple-m1"
+
+    - name: Build Application
+      run: |
+        cd build
+        ninja
+
+    - name: Package Artifact
+      run: |
+        # Mimicking the packaging logic from the legacy .travis.yml
+        # We package the compiled .app bundle into a ZIP for distribution.
+        mkdir -p artifact
+        cd build
+        zip -r ../artifact/instant-meshes-macos-arm64.zip "Instant Meshes.app" || zip -r ../artifact/instant-meshes-macos-arm64.zip *
+        
+    - name: Upload Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: instant-meshes-macos-arm64
+        path: artifact/instant-meshes-macos-arm64.zip
+        retention-days: 7
